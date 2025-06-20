@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="error-container">
+    <h1>500 - Server Error</h1>
+    <p>Something went wrong on our end. We're working to fix it.</p>
+    {% if error_message %}
+    <div class="error-details">
+        <p>Details: {{ error_message }}</p>
+    </div>
+    {% endif %}
+    <a href="{{ url_for('index') }}" class="btn-home">Return Home</a>
+</div>
+{% endblock %}
