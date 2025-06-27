@@ -3,10 +3,12 @@ import subprocess
 import tempfile
 import uuid
 import logging
+import base64
 from io import BytesIO
 import zipfile
-from flask import Flask, render_template, request, send_file
+from flask import Flask, render_template, request, send_file, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
+
 DEFAULT_JKS_PASS = os.getenv('DEFAULT_JKS_PASS', '')
 
 # Initialize Flask app
@@ -37,7 +39,7 @@ def cleanup_temp(temp_dir):
                     os.rmdir(os.path.join(root, name))
             os.rmdir(temp_dir)
     except Exception as e:
-        logger.error("Error cleaning up temp directory: [REDACTED]")
+        logger.error("Error cleaning up temp directory")
 
 def secure_log_command(cmd):
     """Redact sensitive information from commands before logging"""
@@ -96,7 +98,6 @@ def handle_jks_to_pem(request, temp_dir, prefix):
     jks_pass = request.form['jks_password']
     p12_pass = jks_pass
     
-    # Validate JKS file before processing
     if not validate_jks_file(jks_path, jks_pass):
         raise ValueError("Invalid JKS file or password")
     
@@ -119,7 +120,6 @@ def handle_jks_to_pem(request, temp_dir, prefix):
     for cmd in commands:
         run_secure_command(cmd, "JKS to PEM conversion")
     
-    # Create in-memory zip file
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         zip_file.write(key_path, 'private.key')
@@ -159,6 +159,103 @@ def handle_pem_to_jks(request, temp_dir, prefix):
         run_secure_command(cmd, "PEM to JKS conversion")
     
     return send_file(jks_path, as_attachment=True, download_name='keystore.jks')
+
+# Base64 Utilities
+@app.route('/api/base64/encode', methods=['POST'])
+def base64_encode():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+        
+        file_content = file.read()
+        encoded = base64.b64encode(file_content).decode('utf-8')
+        
+        return jsonify({
+            "filename": file.filename,
+            "base64": encoded,
+            "type": "base64"
+        })
+    except Exception as e:
+        logger.error(f"Base64 encode error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/base64/decode', methods=['POST'])
+def base64_decode():
+    try:
+        if not request.is_json:
+            return jsonify({"error": "Request must be JSON"}), 400
+        
+        data = request.get_json()
+        if 'base64' not in data or 'filename' not in data:
+            return jsonify({"error": "Missing base64 data or filename"}), 400
+        
+        decoded = base64.b64decode(data['base64'])
+        return send_file(
+            BytesIO(decoded),
+            as_attachment=True,
+            download_name=data['filename'],
+            mimetype='application/octet-stream'
+        )
+    except Exception as e:
+        logger.error(f"Base64 decode error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# Vault Utilities
+@app.route('/api/vault/encode-jks', methods=['POST'])
+def vault_encode_jks():
+    temp_dir = tempfile.mkdtemp()
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+        
+        jks_file = request.files['file']
+        password = request.form.get('password', DEFAULT_JKS_PASS)
+        jks_path = os.path.join(temp_dir, "temp.jks")
+        jks_file.save(jks_path)
+        
+        if not validate_jks_file(jks_path, password):
+            raise ValueError("Invalid JKS file or password")
+        
+        with open(jks_path, 'rb') as f:
+            jks_content = f.read()
+        
+        encoded = base64.b64encode(jks_content).decode('utf-8')
+        
+        return jsonify({
+            "filename": jks_file.filename,
+            "base64": encoded,
+            "type": "jks",
+            "vault_path_suggestion": f"secret/jks/{os.path.splitext(jks_file.filename)[0]}"
+        })
+    except Exception as e:
+        logger.error(f"Vault JKS encode error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cleanup_temp(temp_dir)
+
+@app.route('/api/vault/encode-pem', methods=['POST'])
+def vault_encode_pem():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+        
+        pem_file = request.files['file']
+        pem_content = pem_file.read()
+        encoded = base64.b64encode(pem_content).decode('utf-8')
+        
+        return jsonify({
+            "filename": pem_file.filename,
+            "base64": encoded,
+            "type": "pem",
+            "vault_path_suggestion": f"secret/certs/{os.path.splitext(pem_file.filename)[0]}"
+        })
+    except Exception as e:
+        logger.error(f"Vault PEM encode error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.errorhandler(404)
 def not_found(e):

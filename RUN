@@ -1,17 +1,9 @@
 #!/bin/bash
 set -eo pipefail
 
-# Set default values
 WORKERS=${WORKERS:-4}
 THREADS=${THREADS:-2}
 TIMEOUT=${TIMEOUT:-120}
-
-# Initialize application
-echo "Starting application with config:"
-echo "Workers: $WORKERS"
-echo "Threads: $THREADS"
-echo "Timeout: $TIMEOUT seconds"
-echo "Port: $PORT"
 
 exec gunicorn app:app \
     --bind 0.0.0.0:$PORT \

@@ -1,5 +1,5 @@
-# Use Red Hat UBI Python 3.9
 FROM registry.access.redhat.com/ubi8/python-39:latest
+
 USER root
 # Install system dependencies
 RUN yum install -y --setopt=tsflags=nodocs \
@@ -15,7 +15,6 @@ ENV PYTHONUNBUFFERED=1 \
     APP_HOME=/app \
     PORT=8080
 
-# Create application directory
 WORKDIR ${APP_HOME}
 
 # Install Python dependencies
@@ -25,25 +24,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY . .
 
-# Create non-root user and set permissions
-# RUN useradd -r -u 1001 -g root appuser
-RUN chown -R 1001:root ${APP_HOME} && \
-    chmod -R g=u ${APP_HOME}
-
-# Set OpenShift compatible permissions
+# Set permissions
 RUN chgrp -R 0 ${APP_HOME} && \
-    chmod -R g=u ${APP_HOME} /etc/passwd
+    chmod -R g=u ${APP_HOME} && \
+    chmod +x ${APP_HOME}/RUN
 
-#Switch to non-root user
 USER 1001
 
-# Health check
-# HEALTHCHECK --interval=30s --timeout=3s \
-#     CMD curl -f http://localhost:${PORT}/health || exit 1
-
-# Expose port
 EXPOSE ${PORT}
 
-# Run script
-RUN chmod +x /app/RUN
-CMD ["/app/RUN"]
+CMD ["./RUN"]
