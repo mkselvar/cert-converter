@@ -26,20 +26,20 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create non-root user and set permissions
-RUN useradd -r -u 1001 -g root appuser && \
-    chown -R appuser:root ${APP_HOME} && \
+# RUN useradd -r -u 1001 -g root appuser
+RUN chown -R 1001:root ${APP_HOME} && \
     chmod -R g=u ${APP_HOME}
 
 # Set OpenShift compatible permissions
 RUN chgrp -R 0 ${APP_HOME} && \
     chmod -R g=u ${APP_HOME} /etc/passwd
 
-Switch to non-root user
-#USER 1001
+#Switch to non-root user
+USER 1001
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s \
-    CMD curl -f http://localhost:${PORT}/health || exit 1
+# HEALTHCHECK --interval=30s --timeout=3s \
+#     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Expose port
 EXPOSE ${PORT}
