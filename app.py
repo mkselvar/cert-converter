@@ -3,28 +3,39 @@ import subprocess
 import tempfile
 import uuid
 import logging
-from io import BytesIO
-import zipfile
-from flask import Flask, render_template, request, send_file
+import base64
+from flask import Flask, render_template, request, send_file, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
-DEFAULT_JKS_PASS = os.getenv('DEFAULT_JKS_PASS', '')
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 # Initialize Flask app
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB limit
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-app.config['PROPAGATE_EXCEPTIONS'] = False
+
+# Configure rate limiting
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"]
+)
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('app.log'),
-        logging.StreamHandler()
-    ]
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def validate_file_size(file):
+    if file.content_length > app.config['MAX_CONTENT_LENGTH']:
+        raise ValueError(f"File too large. Maximum size is {app.config['MAX_CONTENT_LENGTH']/1024/1024}MB")
+
+def validate_pem_content(content):
+    if not content.startswith('-----BEGIN '):
+        raise ValueError("Invalid PEM file format")
+
+def validate_jks_content(content):
+    if not content.startswith(b'\xfe\xed\xfe\xed'):  # JKS magic number
+        raise ValueError("Invalid JKS file format")
 
 def cleanup_temp(temp_dir):
     """Safely remove temporary directory and contents"""
@@ -37,38 +48,14 @@ def cleanup_temp(temp_dir):
                     os.rmdir(os.path.join(root, name))
             os.rmdir(temp_dir)
     except Exception as e:
-        logger.error("Error cleaning up temp directory: [REDACTED]")
-
-def secure_log_command(cmd):
-    """Redact sensitive information from commands before logging"""
-    return cmd.split(' -srcstorepass ')[0].split(' -deststorepass ')[0].split(' -password pass:')[0]
-
-def run_secure_command(cmd, operation_name):
-    """Execute command with secure logging"""
-    logger.info(f"Executing: {secure_log_command(cmd)}")
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode != 0:
-        logger.error(f"Command failed during {operation_name}. Exit code: {result.returncode}")
-        logger.error(f"Command error output: {result.stderr}")
-        raise Exception(f"Operation failed during {operation_name}")
-    return result
-
-def validate_jks_file(file_path, password=None):
-    """Validate JKS file integrity"""
-    try:
-        cmd = f"keytool -list -keystore {file_path}"
-        if password:
-            cmd += f" -storepass {password}"
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
-        return result.returncode == 0
-    except subprocess.SubprocessError:
-        return False
+        logger.error(f"Error cleaning up temp dir {temp_dir}: {str(e)}")
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
 @app.route('/convert', methods=['POST'])
+@limiter.limit("10/minute")
 def convert():
     conversion_type = request.form.get('conversion_type')
     temp_dir = tempfile.mkdtemp()
@@ -82,23 +69,44 @@ def convert():
         else:
             raise ValueError("Invalid conversion type specified")
     except Exception as e:
-        logger.error(f"Conversion error: {str(e)}", exc_info=False)
-        return render_template('error.html', error_message="Conversion failed. Please check your inputs."), 400
+        logger.error(f"Conversion error: {str(e)}")
+        return render_template('error.html', error_message=str(e)), 400
     finally:
         cleanup_temp(temp_dir)
 
+@app.route('/base64', methods=['GET', 'POST'])
+@limiter.limit("30/minute")
+def base64_tool():
+    result = None
+    operation = request.form.get('operation') if request.method == 'POST' else None
+    
+    if operation == 'encode':
+        text = request.form.get('text_to_encode')
+        if text:
+            result = base64.b64encode(text.encode('utf-8')).decode('utf-8')
+    elif operation == 'decode':
+        text = request.form.get('text_to_decode')
+        if text:
+            try:
+                result = base64.b64decode(text.encode('utf-8')).decode('utf-8')
+            except Exception as e:
+                result = f"Error: {str(e)}"
+    
+    return render_template('base64.html', result=result)
+
 def handle_jks_to_pem(request, temp_dir, prefix):
     jks_file = request.files['jks_file']
+    validate_file_size(jks_file)
     jks_path = os.path.join(temp_dir, f"{prefix}.jks")
     jks_file.save(jks_path)
+    
+    # Validate JKS content
+    with open(jks_path, 'rb') as f:
+        validate_jks_content(f.read())
     
     alias = request.form['alias']
     jks_pass = request.form['jks_password']
     p12_pass = jks_pass
-    
-    # Validate JKS file before processing
-    if not validate_jks_file(jks_path, jks_pass):
-        raise ValueError("Invalid JKS file or password")
     
     p12_path = os.path.join(temp_dir, f"{prefix}.p12")
     key_path = os.path.join(temp_dir, f"{prefix}.key")
@@ -117,29 +125,27 @@ def handle_jks_to_pem(request, temp_dir, prefix):
     ]
     
     for cmd in commands:
-        run_secure_command(cmd, "JKS to PEM conversion")
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise Exception(f"Command failed: {cmd}\nError: {result.stderr}")
     
-    # Create in-memory zip file
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        zip_file.write(key_path, 'private.key')
-        zip_file.write(pem_path, 'certificate.pem')
-    
-    zip_buffer.seek(0)
-    return send_file(
-        zip_buffer,
-        as_attachment=True,
-        download_name='converted_files.zip',
-        mimetype='application/zip'
-    )
+    return send_file(key_path, as_attachment=True, download_name='private.key'), \
+           send_file(pem_path, as_attachment=True, download_name='certificate.pem')
 
 def handle_pem_to_jks(request, temp_dir, prefix):
     pem_file = request.files['pem_file']
     key_file = request.files['key_file']
+    validate_file_size(pem_file)
+    validate_file_size(key_file)
+    
     pem_path = os.path.join(temp_dir, f"{prefix}.pem")
     key_path = os.path.join(temp_dir, f"{prefix}.key")
     pem_file.save(pem_path)
     key_file.save(key_path)
+    
+    # Validate PEM content
+    with open(pem_path, 'r') as f:
+        validate_pem_content(f.read())
     
     alias = request.form['alias']
     jks_pass = request.form['jks_password']
@@ -156,9 +162,20 @@ def handle_pem_to_jks(request, temp_dir, prefix):
     ]
     
     for cmd in commands:
-        run_secure_command(cmd, "PEM to JKS conversion")
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise Exception(f"Command failed: {cmd}\nError: {result.stderr}")
     
     return send_file(jks_path, as_attachment=True, download_name='keystore.jks')
+
+@app.route('/health')
+def health_check():
+    return jsonify({'status': 'healthy', 'version': '1.1.0'})
+
+@app.after_request
+def apply_csp(response):
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    return response
 
 @app.errorhandler(404)
 def not_found(e):
@@ -166,7 +183,7 @@ def not_found(e):
 
 @app.errorhandler(500)
 def server_error(e):
-    logger.error("Internal server error occurred")
+    logger.error(f"Server error: {str(e)}")
     return render_template('500.html'), 500
 
 if __name__ == '__main__':

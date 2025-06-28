@@ -1,0 +1,32 @@
+<div class="converter-card">
+    <h2>Base64 Encoder/Decoder</h2>
+    <form action="/base64" method="post">
+        <div class="form-group">
+            <label for="text_to_encode">Text to Encode:</label>
+            <textarea id="text_to_encode" name="text_to_encode" class="form-textarea" rows="4" placeholder="Enter text to encode to Base64"></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="text_to_decode">Text to Decode:</label>
+            <textarea id="text_to_decode" name="text_to_decode" class="form-textarea" rows="4" placeholder="Enter Base64 text to decode"></textarea>
+        </div>
+        
+        <div class="form-group button-group">
+            <button type="submit" name="operation" value="encode" class="btn-convert">Encode</button>
+            <button type="submit" name="operation" value="decode" class="btn-convert">Decode</button>
+        </div>
+        
+        {% if result %}
+        <div class="result-container">
+            <div class="result-header">
+                <h3>Result:</h3>
+                <button onclick="copyToClipboard('{{ result }}')" class="copy-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M19 21H8V7h11m0-2H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m-3-4H4a2 2 0 0 0-2 2v14h2V3h12V1z"/></svg>
+                    Copy
+                </button>
+            </div>
+            <div class="result-box">{{ result }}</div>
+        </div>
+        {% endif %}
+    </form>
+</div>

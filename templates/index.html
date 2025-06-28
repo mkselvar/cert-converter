@@ -3,77 +3,191 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Certificate Converter</title>
+    <title>Security Tools</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Certificate Converter</h1>
-            <p>Convert between JKS and PEM/KEY formats securely</p>
+            <h1>Security Tools</h1>
+            <p>Certificate conversion and encoding utilities</p>
         </header>
         
-        <div class="converter-grid">
-            <!-- JKS to PEM -->
-            <div class="converter-card">
-                <h2>JKS to PEM/KEY</h2>
-                <form action="/convert" method="post" enctype="multipart/form-data">
-                    <input type="hidden" name="conversion_type" value="jks-to-pem">
-                    
-                    <div class="form-group">
-                        <label for="jks_file">JKS File:</label>
-                        <input type="file" id="jks_file" name="jks_file" accept=".jks,.keystore" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="alias">Alias:</label>
-                        <input type="text" id="alias" name="alias" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="jks_password">JKS Password:</label>
-                        <input type="password" id="jks_password" name="jks_password" required>
-                    </div>
-                    
-                    <button type="submit" class="btn-convert">Convert to PEM/KEY</button>
-                </form>
-            </div>
-            
-            <!-- PEM to JKS -->
-            <div class="converter-card">
-                <h2>PEM/KEY to JKS</h2>
-                <form action="/convert" method="post" enctype="multipart/form-data">
-                    <input type="hidden" name="conversion_type" value="pem-to-jks">
-                    
-                    <div class="form-group">
-                        <label for="pem_file">Certificate (PEM):</label>
-                        <input type="file" id="pem_file" name="pem_file" accept=".pem,.crt" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="key_file">Private Key (KEY):</label>
-                        <input type="file" id="key_file" name="key_file" accept=".key" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="alias_jks">Alias:</label>
-                        <input type="text" id="alias_jks" name="alias" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="jks_password_new">JKS Password:</label>
-                        <input type="password" id="jks_password_new" name="jks_password" required>
-                    </div>
-                    
-                    <button type="submit" class="btn-convert">Convert to JKS</button>
-                </form>
+        <nav class="tool-nav">
+            <a href="#certificate-converter" class="active">Certificate Converter</a>
+            <a href="#base64-tool">Base64 Tool</a>
+        </nav>
+        
+        <div id="certificate-converter" class="tool-section">
+            <div class="converter-grid">
+                <!-- JKS to PEM -->
+                <div class="converter-card">
+                    <h2>JKS to PEM/KEY</h2>
+                    <form action="/convert" method="post" enctype="multipart/form-data" id="jks-form">
+                        <input type="hidden" name="conversion_type" value="jks-to-pem">
+                        
+                        <div class="form-group file-drop-area">
+                            <label for="jks_file">JKS File:</label>
+                            <input type="file" id="jks_file" name="jks_file" accept=".jks,.keystore" required>
+                            <div class="file-info">Drag & drop file or click to browse</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="alias">Alias:</label>
+                            <input type="text" id="alias" name="alias" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="jks_password">JKS Password:</label>
+                            <input type="password" id="jks_password" name="jks_password" required oninput="checkPasswordStrength(this.value)">
+                            <div class="password-strength">
+                                <div class="password-strength-bar" id="password-strength-bar"></div>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn-convert">Convert to PEM/KEY</button>
+                    </form>
+                </div>
+                
+                <!-- PEM to JKS -->
+                <div class="converter-card">
+                    <h2>PEM/KEY to JKS</h2>
+                    <form action="/convert" method="post" enctype="multipart/form-data" id="pem-form">
+                        <input type="hidden" name="conversion_type" value="pem-to-jks">
+                        
+                        <div class="form-group file-drop-area">
+                            <label for="pem_file">Certificate (PEM):</label>
+                            <input type="file" id="pem_file" name="pem_file" accept=".pem,.crt" required>
+                            <div class="file-info">Drag & drop file or click to browse</div>
+                        </div>
+                        
+                        <div class="form-group file-drop-area">
+                            <label for="key_file">Private Key (KEY):</label>
+                            <input type="file" id="key_file" name="key_file" accept=".key" required>
+                            <div class="file-info">Drag & drop file or click to browse</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="alias_jks">Alias:</label>
+                            <input type="text" id="alias_jks" name="alias" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="jks_password_new">JKS Password:</label>
+                            <input type="password" id="jks_password_new" name="jks_password" required oninput="checkPasswordStrength(this.value, 'new')">
+                            <div class="password-strength">
+                                <div class="password-strength-bar" id="password-strength-bar-new"></div>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn-convert">Convert to JKS</button>
+                    </form>
+                </div>
             </div>
         </div>
         
+        <div id="base64-tool" class="tool-section" style="display: none;">
+            {% include 'base64.html' %}
+        </div>
+        
         <footer>
-            <p>Secure Certificate Conversion Tool | All conversions are performed in memory</p>
+            <p>Security Tools v1.1 | All conversions are performed in memory</p>
         </footer>
     </div>
+
+    <script>
+        // Navigation between tools
+        document.querySelectorAll('.tool-nav a').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                document.querySelectorAll('.tool-nav a').forEach(navLink => {
+                    navLink.classList.remove('active');
+                });
+                this.classList.add('active');
+                
+                document.querySelectorAll('.tool-section').forEach(section => {
+                    section.style.display = 'none';
+                });
+                
+                const targetId = this.getAttribute('href').substring(1);
+                document.getElementById(targetId).style.display = 'block';
+            });
+        });
+
+        // Drag and drop file handling
+        document.querySelectorAll('input[type="file"]').forEach(input => {
+            const dropArea = input.closest('.file-drop-area');
+            const fileInfo = dropArea.querySelector('.file-info');
+            
+            input.addEventListener('change', () => {
+                if (input.files.length) {
+                    fileInfo.textContent = input.files[0].name;
+                }
+            });
+            
+            dropArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropArea.classList.add('drag-over');
+            });
+            
+            dropArea.addEventListener('dragleave', () => {
+                dropArea.classList.remove('drag-over');
+            });
+            
+            dropArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropArea.classList.remove('drag-over');
+                if (e.dataTransfer.files.length) {
+                    input.files = e.dataTransfer.files;
+                    fileInfo.textContent = e.dataTransfer.files[0].name;
+                }
+            });
+        });
+
+        // Password strength meter
+        function checkPasswordStrength(password, suffix = '') {
+            const strengthBar = document.getElementById(`password-strength-bar${suffix ? '-' + suffix : ''}`);
+            const strength = calculatePasswordStrength(password);
+            
+            strengthBar.style.width = `${strength.score * 25}%`;
+            strengthBar.style.backgroundColor = getStrengthColor(strength.score);
+        }
+
+        function calculatePasswordStrength(password) {
+            let score = 0;
+            if (!password) return { score: 0 };
+            
+            // Length
+            if (password.length > 10) score += 2;
+            else if (password.length > 6) score += 1;
+            
+            // Complexity
+            if (/[A-Z]/.test(password)) score += 1;
+            if (/[0-9]/.test(password)) score += 1;
+            if (/[^A-Za-z0-9]/.test(password)) score += 1;
+            
+            return { score: Math.min(4, score) };
+        }
+
+        function getStrengthColor(score) {
+            const colors = ['#e74c3c', '#f39c12', '#3498db', '#2ecc71'];
+            return colors[score] || colors[0];
+        }
+
+        // Copy to clipboard function for base64 tool
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const copyBtn = event.target.closest('.copy-btn');
+                if (copyBtn) {
+                    const originalText = copyBtn.innerHTML;
+                    copyBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M21 7L9 19l-5.5-5.5 1.41-1.41L9 16.17 19.59 5.59 21 7z"/></svg> Copied!';
+                    setTimeout(() => {
+                        copyBtn.innerHTML = originalText;
+                    }, 2000);
+                }
+            });
+        }
+    </script>
 </body>
 </html>

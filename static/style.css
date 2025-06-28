@@ -5,6 +5,8 @@
     --card-color: #ffffff;
     --text-color: #333333;
     --error-color: #e74c3c;
+    --success-color: #2ecc71;
+    --warning-color: #f39c12;
 }
 
 body {
@@ -24,12 +26,38 @@ body {
 
 header {
     text-align: center;
-    margin-bottom: 40px;
+    margin-bottom: 20px;
 }
 
 header h1 {
     color: var(--primary-color);
     margin-bottom: 10px;
+}
+
+.tool-nav {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 30px;
+    border-bottom: 1px solid #ddd;
+}
+
+.tool-nav a {
+    padding: 10px 20px;
+    margin: 0 10px;
+    text-decoration: none;
+    color: var(--text-color);
+    font-weight: 600;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s;
+}
+
+.tool-nav a.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.tool-nav a:hover {
+    color: var(--primary-color);
 }
 
 .converter-grid {
@@ -70,7 +98,8 @@ label {
 
 input[type="file"],
 input[type="text"],
-input[type="password"] {
+input[type="password"],
+.form-textarea {
     width: 100%;
     padding: 12px;
     border: 1px solid #ddd;
@@ -81,13 +110,47 @@ input[type="password"] {
 
 input[type="file"] {
     padding: 8px;
+    opacity: 0;
+    position: absolute;
+    z-index: -1;
+}
+
+.file-drop-area {
+    position: relative;
+    border: 2px dashed #ddd;
+    border-radius: 4px;
+    padding: 20px;
+    text-align: center;
+    transition: all 0.3s;
+}
+
+.file-drop-area.drag-over {
+    border-color: var(--primary-color);
+    background-color: rgba(52, 152, 219, 0.05);
+}
+
+.file-info {
+    margin-top: 10px;
+    color: #666;
+    font-size: 14px;
 }
 
 input[type="file"]:focus,
 input[type="text"]:focus,
-input[type="password"]:focus {
+input[type="password"]:focus,
+.form-textarea:focus {
     border-color: var(--primary-color);
     outline: none;
+}
+
+.form-textarea {
+    resize: vertical;
+    min-height: 100px;
+}
+
+.button-group {
+    display: flex;
+    gap: 10px;
 }
 
 .btn-convert {
@@ -99,12 +162,78 @@ input[type="password"]:focus {
     cursor: pointer;
     font-size: 16px;
     font-weight: 600;
-    width: 100%;
     transition: background-color 0.3s;
+    flex: 1;
 }
 
 .btn-convert:hover {
     background-color: var(--secondary-color);
+}
+
+.copy-btn {
+    background-color: #f0f0f0;
+    color: var(--text-color);
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: background-color 0.3s;
+}
+
+.copy-btn:hover {
+    background-color: #e0e0e0;
+}
+
+.copy-btn svg {
+    margin-right: 5px;
+}
+
+.result-container {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+}
+
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.result-header h3 {
+    margin: 0;
+    color: var(--secondary-color);
+}
+
+.result-box {
+    padding: 10px;
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    word-break: break-all;
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.password-strength {
+    height: 4px;
+    background: #eee;
+    margin-top: 8px;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.password-strength-bar {
+    height: 100%;
+    width: 0%;
+    transition: width 0.3s, background 0.3s;
 }
 
 footer {
@@ -115,6 +244,43 @@ footer {
     color: #777;
 }
 
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --background-color: #121212;
+        --card-color: #1e1e1e;
+        --text-color: #e0e0e0;
+    }
+    
+    .file-drop-area {
+        border-color: #444;
+    }
+    
+    .result-container {
+        background-color: #2d2d2d;
+    }
+    
+    input, textarea {
+        background-color: #2d2d2d;
+        color: var(--text-color);
+        border-color: #444;
+    }
+    
+    .copy-btn {
+        background-color: #333;
+        color: var(--text-color);
+    }
+    
+    .copy-btn:hover {
+        background-color: #444;
+    }
+    
+    .result-box {
+        background-color: #333;
+        border-color: #444;
+    }
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .converter-grid {
@@ -123,5 +289,18 @@ footer {
     
     .container {
         padding: 15px;
+    }
+    
+    .button-group {
+        flex-direction: column;
+    }
+    
+    .tool-nav {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .tool-nav a {
+        margin: 5px 0;
     }
 }
