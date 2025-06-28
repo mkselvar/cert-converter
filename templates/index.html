@@ -8,35 +8,72 @@
 </head>
 <body>
     <div class="container">
-        <!-- Existing conversion forms -->
-        <div class="converter-grid">
-            <!-- JKS to PEM/KEY form -->
-            <!-- PEM/KEY to JKS form -->
-        </div>
-
-        <!-- New Utilities Section -->
-        <div class="utilities-section">
-            <h2>Vault Encoding Utilities</h2>
+        <!-- Certificate Conversion Section -->
+        <div class="section">
+            <h1>Certificate Converter</h1>
             
-            <div class="utility-card">
-                <h3>Base64 Encode Files</h3>
-                <form id="base64EncodeForm" enctype="multipart/form-data">
-                    <div class="form-group">
-                        <label>Select File:</label>
-                        <input type="file" id="base64File" name="file" required>
-                    </div>
-                    <button type="submit" class="btn-utility">Encode to Base64</button>
-                </form>
-                <div id="base64Result" class="result-container" style="display:none;">
-                    <h4>Base64 Result:</h4>
-                    <textarea id="base64Output" class="result-textarea" readonly></textarea>
-                    <button onclick="copyBase64()" class="btn-copy">Copy to Clipboard</button>
+            <div class="converter-tabs">
+                <!-- JKS to PEM/KEY -->
+                <div class="tab">
+                    <h2>JKS to PEM/KEY</h2>
+                    <form id="jksToPemForm" enctype="multipart/form-data">
+                        <input type="hidden" name="conversion_type" value="jks-to-pem">
+                        <div class="form-group">
+                            <label>JKS File:</label>
+                            <input type="file" name="jks_file" accept=".jks,.keystore" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Alias:</label>
+                            <input type="text" name="alias" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Password:</label>
+                            <input type="password" name="password" required>
+                        </div>
+                        <button type="submit">Convert</button>
+                    </form>
+                </div>
+                
+                <!-- PEM/KEY to JKS -->
+                <div class="tab">
+                    <h2>PEM/KEY to JKS</h2>
+                    <form id="pemToJksForm" enctype="multipart/form-data">
+                        <input type="hidden" name="conversion_type" value="pem-to-jks">
+                        <div class="form-group">
+                            <label>Certificate (PEM):</label>
+                            <input type="file" name="cert_file" accept=".pem,.crt" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Private Key (KEY):</label>
+                            <input type="file" name="key_file" accept=".key" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Alias:</label>
+                            <input type="text" name="alias" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Password:</label>
+                            <input type="password" name="password" required>
+                        </div>
+                        <button type="submit">Convert</button>
+                    </form>
                 </div>
             </div>
-            
-            <!-- Other utility cards (decode, vault JKS, vault PEM) -->
+        </div>
+
+        <!-- Base64 Utilities Section -->
+        <div class="section">
+            <h1>Base64 Utilities</h1>
+            <!-- ... [Your Base64 utility forms] ... -->
+        </div>
+
+        <!-- Vault Utilities Section -->
+        <div class="section">
+            <h1>Vault Utilities</h1>
+            <!-- ... [Your Vault utility forms] ... -->
         </div>
     </div>
+
     <script src="/static/script.js"></script>
 </body>
 </html>

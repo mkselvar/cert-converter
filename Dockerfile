@@ -1,21 +1,14 @@
-FROM registry.access.redhat.com/ubi8/python-39:latest
+FROM python:3.9-slim
 
-USER root
 # Install system dependencies
-RUN yum install -y --setopt=tsflags=nodocs \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     openssl \
-    java-11-openjdk-headless && \
-    yum clean all && \
-    rm -rf /var/cache/yum
+    default-jdk-headless && \
+    rm -rf /var/lib/apt/lists/*
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=on \
-    APP_HOME=/app \
-    PORT=8080
-
-WORKDIR ${APP_HOME}
+# Set up application directory
+WORKDIR /app
 
 # Install Python dependencies
 COPY requirements.txt .
@@ -24,13 +17,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY . .
 
-# Set permissions
-RUN chgrp -R 0 ${APP_HOME} && \
-    chmod -R g=u ${APP_HOME} && \
-    chmod +x ${APP_HOME}/RUN
+# Create non-root user and set permissions
+RUN useradd -m appuser && \
+    chown -R appuser:appuser /app
+USER appuser
 
-USER 1001
-
-EXPOSE ${PORT}
-
-CMD ["./RUN"]
+# Expose port and run Gunicorn
+EXPOSE 5000
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--threads", "2", "app:app"]

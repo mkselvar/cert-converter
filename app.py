@@ -9,13 +9,9 @@ import zipfile
 from flask import Flask, render_template, request, send_file, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-DEFAULT_JKS_PASS = os.getenv('DEFAULT_JKS_PASS', '')
-
-# Initialize Flask app
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB limit
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB limit
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-app.config['PROPAGATE_EXCEPTIONS'] = False
 
 # Configure logging
 logging.basicConfig(
@@ -39,21 +35,7 @@ def cleanup_temp(temp_dir):
                     os.rmdir(os.path.join(root, name))
             os.rmdir(temp_dir)
     except Exception as e:
-        logger.error("Error cleaning up temp directory")
-
-def secure_log_command(cmd):
-    """Redact sensitive information from commands before logging"""
-    return cmd.split(' -srcstorepass ')[0].split(' -deststorepass ')[0].split(' -password pass:')[0]
-
-def run_secure_command(cmd, operation_name):
-    """Execute command with secure logging"""
-    logger.info(f"Executing: {secure_log_command(cmd)}")
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode != 0:
-        logger.error(f"Command failed during {operation_name}. Exit code: {result.returncode}")
-        logger.error(f"Command error output: {result.stderr}")
-        raise Exception(f"Operation failed during {operation_name}")
-    return result
+        logger.error(f"Error cleaning up temp dir: {str(e)}")
 
 def validate_jks_file(file_path, password=None):
     """Validate JKS file integrity"""
@@ -70,98 +52,126 @@ def validate_jks_file(file_path, password=None):
 def index():
     return render_template('index.html')
 
-@app.route('/convert', methods=['POST'])
-def convert():
-    conversion_type = request.form.get('conversion_type')
+# Certificate Conversion Endpoints
+@app.route('/convert/jks-to-pem', methods=['POST'])
+def convert_jks_to_pem():
     temp_dir = tempfile.mkdtemp()
-    prefix = str(uuid.uuid4())
-    
     try:
-        if conversion_type == 'jks-to-pem':
-            return handle_jks_to_pem(request, temp_dir, prefix)
-        elif conversion_type == 'pem-to-jks':
-            return handle_pem_to_jks(request, temp_dir, prefix)
-        else:
-            raise ValueError("Invalid conversion type specified")
+        if 'jks_file' not in request.files:
+            return jsonify({"error": "No JKS file provided"}), 400
+        
+        jks_file = request.files['jks_file']
+        alias = request.form.get('alias', '1')
+        password = request.form.get('password', '')
+        
+        jks_path = os.path.join(temp_dir, "temp.jks")
+        jks_file.save(jks_path)
+        
+        if not validate_jks_file(jks_path, password):
+            return jsonify({"error": "Invalid JKS file or password"}), 400
+        
+        p12_path = os.path.join(temp_dir, "temp.p12")
+        key_path = os.path.join(temp_dir, "private.key")
+        pem_path = os.path.join(temp_dir, "certificate.pem")
+        
+        # Convert JKS to PKCS12
+        subprocess.run(
+            f"keytool -importkeystore -srckeystore {jks_path} -destkeystore {p12_path} "
+            f"-deststoretype PKCS12 -srcalias {alias} -srcstorepass {password} "
+            f"-deststorepass {password}",
+            shell=True, check=True
+        )
+        
+        # Extract private key
+        subprocess.run(
+            f"openssl pkcs12 -in {p12_path} -nocerts -nodes "
+            f"-out {key_path} -password pass:{password}",
+            shell=True, check=True
+        )
+        
+        # Extract certificate
+        subprocess.run(
+            f"openssl pkcs12 -in {p12_path} -clcerts -nokeys "
+            f"-out {pem_path} -password pass:{password}",
+            shell=True, check=True
+        )
+        
+        # Create zip file
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.write(key_path, 'private.key')
+            zip_file.write(pem_path, 'certificate.pem')
+        
+        zip_buffer.seek(0)
+        return send_file(
+            zip_buffer,
+            as_attachment=True,
+            download_name='converted.zip',
+            mimetype='application/zip'
+        )
+        
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Conversion error: {str(e)}")
+        return jsonify({"error": "Conversion failed"}), 500
     except Exception as e:
-        logger.error(f"Conversion error: {str(e)}", exc_info=False)
-        return render_template('error.html', error_message="Conversion failed. Please check your inputs."), 400
+        logger.error(f"Unexpected error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
     finally:
         cleanup_temp(temp_dir)
 
-def handle_jks_to_pem(request, temp_dir, prefix):
-    jks_file = request.files['jks_file']
-    jks_path = os.path.join(temp_dir, f"{prefix}.jks")
-    jks_file.save(jks_path)
-    
-    alias = request.form['alias']
-    jks_pass = request.form['jks_password']
-    p12_pass = jks_pass
-    
-    if not validate_jks_file(jks_path, jks_pass):
-        raise ValueError("Invalid JKS file or password")
-    
-    p12_path = os.path.join(temp_dir, f"{prefix}.p12")
-    key_path = os.path.join(temp_dir, f"{prefix}.key")
-    pem_path = os.path.join(temp_dir, f"{prefix}.pem")
-    
-    commands = [
-        f"keytool -importkeystore -srckeystore {jks_path} -destkeystore {p12_path} "
-        f"-deststoretype PKCS12 -srcalias {alias} -srcstorepass {jks_pass} "
-        f"-deststorepass {p12_pass}",
+@app.route('/convert/pem-to-jks', methods=['POST'])
+def convert_pem_to_jks():
+    temp_dir = tempfile.mkdtemp()
+    try:
+        if 'cert_file' not in request.files or 'key_file' not in request.files:
+            return jsonify({"error": "Certificate and key files required"}), 400
         
-        f"openssl pkcs12 -in {p12_path} -nocerts -nodes "
-        f"-out {key_path} -password pass:{p12_pass}",
+        cert_file = request.files['cert_file']
+        key_file = request.files['key_file']
+        alias = request.form.get('alias', '1')
+        password = request.form.get('password', 'changeit')
         
-        f"openssl pkcs12 -in {p12_path} -clcerts -nokeys "
-        f"-out {pem_path} -password pass:{p12_pass}"
-    ]
-    
-    for cmd in commands:
-        run_secure_command(cmd, "JKS to PEM conversion")
-    
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        zip_file.write(key_path, 'private.key')
-        zip_file.write(pem_path, 'certificate.pem')
-    
-    zip_buffer.seek(0)
-    return send_file(
-        zip_buffer,
-        as_attachment=True,
-        download_name='converted_files.zip',
-        mimetype='application/zip'
-    )
-
-def handle_pem_to_jks(request, temp_dir, prefix):
-    pem_file = request.files['pem_file']
-    key_file = request.files['key_file']
-    pem_path = os.path.join(temp_dir, f"{prefix}.pem")
-    key_path = os.path.join(temp_dir, f"{prefix}.key")
-    pem_file.save(pem_path)
-    key_file.save(key_path)
-    
-    alias = request.form['alias']
-    jks_pass = request.form['jks_password']
-    jks_path = os.path.join(temp_dir, f"{prefix}.jks")
-    p12_path = os.path.join(temp_dir, f"{prefix}.p12")
-    
-    commands = [
-        f"openssl pkcs12 -export -in {pem_path} -inkey {key_path} "
-        f"-out {p12_path} -name {alias} -password pass:{jks_pass}",
+        cert_path = os.path.join(temp_dir, "cert.pem")
+        key_path = os.path.join(temp_dir, "key.pem")
+        p12_path = os.path.join(temp_dir, "temp.p12")
+        jks_path = os.path.join(temp_dir, "keystore.jks")
         
-        f"keytool -importkeystore -srckeystore {p12_path} "
-        f"-srcstoretype PKCS12 -destkeystore {jks_path} -deststoretype JKS "
-        f"-srcstorepass {jks_pass} -deststorepass {jks_pass}"
-    ]
-    
-    for cmd in commands:
-        run_secure_command(cmd, "PEM to JKS conversion")
-    
-    return send_file(jks_path, as_attachment=True, download_name='keystore.jks')
+        cert_file.save(cert_path)
+        key_file.save(key_path)
+        
+        # Create PKCS12
+        subprocess.run(
+            f"openssl pkcs12 -export -in {cert_path} -inkey {key_path} "
+            f"-out {p12_path} -name {alias} -password pass:{password}",
+            shell=True, check=True
+        )
+        
+        # Convert to JKS
+        subprocess.run(
+            f"keytool -importkeystore -srckeystore {p12_path} "
+            f"-srcstoretype PKCS12 -destkeystore {jks_path} -deststoretype JKS "
+            f"-srcstorepass {password} -deststorepass {password}",
+            shell=True, check=True
+        )
+        
+        return send_file(
+            jks_path,
+            as_attachment=True,
+            download_name='keystore.jks',
+            mimetype='application/octet-stream'
+        )
+        
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Conversion error: {str(e)}")
+        return jsonify({"error": "Conversion failed"}), 500
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+    finally:
+        cleanup_temp(temp_dir)
 
 # Base64 Utilities
-@app.route('/api/base64/encode', methods=['POST'])
+@app.route('/base64/encode', methods=['POST'])
 def base64_encode():
     try:
         if 'file' not in request.files:
@@ -183,7 +193,7 @@ def base64_encode():
         logger.error(f"Base64 encode error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/base64/decode', methods=['POST'])
+@app.route('/base64/decode', methods=['POST'])
 def base64_decode():
     try:
         if not request.is_json:
@@ -205,7 +215,7 @@ def base64_decode():
         return jsonify({"error": str(e)}), 500
 
 # Vault Utilities
-@app.route('/api/vault/encode-jks', methods=['POST'])
+@app.route('/vault/encode-jks', methods=['POST'])
 def vault_encode_jks():
     temp_dir = tempfile.mkdtemp()
     try:
@@ -213,12 +223,13 @@ def vault_encode_jks():
             return jsonify({"error": "No file provided"}), 400
         
         jks_file = request.files['file']
-        password = request.form.get('password', DEFAULT_JKS_PASS)
+        password = request.form.get('password', '')
+        
         jks_path = os.path.join(temp_dir, "temp.jks")
         jks_file.save(jks_path)
         
         if not validate_jks_file(jks_path, password):
-            raise ValueError("Invalid JKS file or password")
+            return jsonify({"error": "Invalid JKS file or password"}), 400
         
         with open(jks_path, 'rb') as f:
             jks_content = f.read()
@@ -229,7 +240,13 @@ def vault_encode_jks():
             "filename": jks_file.filename,
             "base64": encoded,
             "type": "jks",
-            "vault_path_suggestion": f"secret/jks/{os.path.splitext(jks_file.filename)[0]}"
+            "vault_path_suggestion": f"secret/jks/{os.path.splitext(jks_file.filename)[0]}",
+            "payload": {
+                "data": {
+                    "content": encoded,
+                    "password": password
+                }
+            }
         })
     except Exception as e:
         logger.error(f"Vault JKS encode error: {str(e)}")
@@ -237,7 +254,7 @@ def vault_encode_jks():
     finally:
         cleanup_temp(temp_dir)
 
-@app.route('/api/vault/encode-pem', methods=['POST'])
+@app.route('/vault/encode-pem', methods=['POST'])
 def vault_encode_pem():
     try:
         if 'file' not in request.files:
@@ -251,20 +268,16 @@ def vault_encode_pem():
             "filename": pem_file.filename,
             "base64": encoded,
             "type": "pem",
-            "vault_path_suggestion": f"secret/certs/{os.path.splitext(pem_file.filename)[0]}"
+            "vault_path_suggestion": f"secret/certs/{os.path.splitext(pem_file.filename)[0]}",
+            "payload": {
+                "data": {
+                    "content": encoded
+                }
+            }
         })
     except Exception as e:
         logger.error(f"Vault PEM encode error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.errorhandler(404)
-def not_found(e):
-    return render_template('404.html'), 404
-
-@app.errorhandler(500)
-def server_error(e):
-    logger.error("Internal server error occurred")
-    return render_template('500.html'), 500
-
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=False)
+    app.run(host='0.0.0.0', port=5000, debug=False)
